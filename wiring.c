@@ -3,6 +3,9 @@
 */
 #include "./wiring.h"
 #include <stdint.h>
+#include <string.h>
+
+#include <azure_c_shared_utility/xlogging.h>
 
 static unsigned int BMEInitMark = 0;
 
@@ -15,24 +18,33 @@ float random(int min, int max)
 
 int readMessage(int messageId, char *payload)
 {
-	uint16_t temperature;
-	uint16_t humidity;
+	char temperature_buf[5];
+	char humidity_buf[5];
 
 	uint8_t buffer[8];
 
 	int bytes = can_read_blocking(buffer, sizeof(buffer));
 
-	if (bytes >= 4)
+	if (bytes == sizeof(buffer))
 	{
-		temperature = buffer[0] << 8 | buffer[1];
-		humidity = buffer[2] << 8 | buffer[3];
+		memcpy(temperature_buf, buffer, 4);
+		temperature_buf[4] = '\0';
+		memcpy(humidity_buf, buffer + 4, 4);
+		humidity_buf[4] = '\0';
 	}
+
+	LogInfo("CAN message received.");
+
     snprintf(payload,
              BUFFER_SIZE,
-             "{ \"deviceId\": \"Raspberry Pi - C\", \"messageId\": %d, \"temperature\": %d, \"humidity\": %d }",
+             "{ \"deviceId\": \"Raspberry Pi - C\", \"messageId\": %d, \"temperature\": %s, \"humidity\": %s }",
              messageId,
-             temperature,
-             humidity);
+             temperature_buf,
+             humidity_buf);
+    float temperature;
+
+    sscanf(temperature_buf, "%f", &temperature);
+
     return (temperature > TEMPERATURE_ALERT) ? 1 : 0;
 }
 

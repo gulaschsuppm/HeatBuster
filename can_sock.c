@@ -10,22 +10,44 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <errno.h>
+
+#include <azure_c_shared_utility/xlogging.h>
+
+#define MAX_CAN_NODES	2
 
 static int fd;
 
-bool can_setup (int32_t CANbaseAddress, uint8_t nodeId, uint16_t bitRate)
+static uint8_t can_id_table[MAX_CAN_NODES];
+static uint8_t node_id;
+struct can_filter* filter;
+
+bool can_setup (int32_t CANbaseAddress, uint8_t nodeId, uint16_t bitRate, uint8_t* node_table, size_t node_table_length)
 {
 	bool ret = true;
 
 	struct sockaddr_can sockAddr;
-	struct can_filter* filter;
 
-    /* Create and bind socket */
-    fd = socket(AF_CAN, SOCK_RAW, CAN_RAW);
+	if (node_table_length == MAX_CAN_NODES)
+	{
+		memcpy(can_id_table, node_table, node_table_length);
+		node_id = nodeId;
+	}
+	else
+	{
+		LogError("Node table too long.");
+		ret = false;
+	}
 
-    if(fd < 0)
+	if (ret == true)
+	{
+		/* Create and bind socket */
+		fd = socket(AF_CAN, SOCK_RAW, CAN_RAW);
+	}
+
+    if(ret == false || fd < 0)
     {
-    	printf("Couldn_t open socket.\n");
+    	LogError("Couldn_t open socket.");
         ret = false;
     }
     else
@@ -34,7 +56,7 @@ bool can_setup (int32_t CANbaseAddress, uint8_t nodeId, uint16_t bitRate)
         sockAddr.can_ifindex = CANbaseAddress;
         if(bind(fd, (struct sockaddr*)&sockAddr, sizeof(sockAddr)) != 0)
         {
-        	printf("Couldn't bind CAN.\n");
+        	LogError("Couldn't bind CAN.");
         	ret = false;
         }
     }
@@ -54,16 +76,31 @@ bool can_setup (int32_t CANbaseAddress, uint8_t nodeId, uint16_t bitRate)
 	{
 		ret = false;
 	}
+	else if (filter != NULL)
+	{
+		filter->can_id = nodeId;
+		filter->can_mask = nodeId;
+	}
 
-	printf("Can should be set up.\n");
+    if(setsockopt(fd, SOL_CAN_RAW, CAN_RAW_FILTER, filter, sizeof(struct can_filter)) != 0)
+    //if(setsockopt(fd, SOL_CAN_RAW, CAN_RAW_FILTER, NULL, 0) != 0)
+    {
+    	ret = false;
+    }
 
-//	/* close CAN module filters for now. */
-//	if(ret == true)
-//	{
-//	setsockopt(fd, SOL_CAN_RAW, CAN_RAW_FILTER, NULL, 0);
-//	}
+    if (ret != false)
+    {
+    	LogInfo("Can should be set up.");
+    }
 
 	return ret;
+}
+
+void can_shutdown(void)
+{
+    close(fd);
+    free(filter);
+    filter = NULL;
 }
 
 int can_read_blocking(uint8_t* buffer, size_t buffer_len)
@@ -81,8 +118,49 @@ int can_read_blocking(uint8_t* buffer, size_t buffer_len)
     }
     else
     {
-    	printf("Buffer too small for msg length %d\n", msg.can_dlc);
+    	LogError("Buffer too small for msg length %d.", msg.can_dlc);
     }
 
     return msg.can_dlc;
+}
+
+int can_write(uint8_t* buffer, size_t buffer_len)
+{
+	static int can_id_idx = 0;
+
+	struct can_frame msg;
+	struct canfd_frame msg1;
+
+	/* Early exit if buffer is too big. */
+	if (buffer_len > sizeof(msg.data))
+	{
+		LogError("Buffer too long for CAN frame.");
+		return 0;
+	}
+
+	msg.can_id = can_id_table[can_id_idx];
+	can_id_idx = (can_id_idx + 1) % MAX_CAN_NODES;
+	msg.can_dlc = buffer_len;
+	memcpy(msg.data, buffer, buffer_len);
+
+    size_t count = sizeof(msg);
+
+    int n = write(fd, &msg, count);
+
+    if (n < 0)
+    {
+    	int error = errno;
+    	LogError("CAN write failed with %d.", error);
+    }
+
+    if (n != count)
+    {
+    	LogError("Could not send all bytes %d %d.", count, n);
+    }
+    else
+    {
+    	LogInfo("CAN message sent.");
+    }
+
+    return n;
 }

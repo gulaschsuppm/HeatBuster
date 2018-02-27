@@ -20,6 +20,8 @@
 #include "./wiring.h"
 #include "./telemetry.h"
 #include "can_sock.h"
+#include <signal.h>
+#include <net/if.h>
 
 const char *onSuccess = "\"Successfully invoke device method\"";
 const char *notFound = "\"No method found\"";
@@ -33,6 +35,7 @@ static const char *EVENT_SUCCESS = "success";
 static const char *EVENT_FAILED = "failed";
 
 pthread_t thread;
+pthread_t can_send_thread;
 
 static void sendCallback(IOTHUB_CLIENT_CONFIRMATION_RESULT result, void *userContextCallback)
 {
@@ -317,23 +320,63 @@ void *send_telemetry_data_multi_thread(char *iotHubName, const char *eventName, 
     }
 }
 
+static bool run_thread = true;
+
+void *can_thread(void *argv)
+{
+	uint8_t data[9];
+	float temp;
+
+	while (run_thread)
+	{
+		sleep(30);
+		temp = random(0, 99);
+		snprintf(data, sizeof(data), "%2.4f", temp);
+		temp = random(0, 99);
+		snprintf(data + 4, sizeof(data) - 4, "%2.4f", temp);
+		LogInfo("Trying to write CAN %s.", data);
+		int count = can_write(data, 8);
+	}
+}
+
+void close_thread(int sig)
+{
+	LogInfo("CTRL-C received, closed thread.");
+	run_thread = false;
+	pthread_join(can_send_thread, NULL);
+}
+
 int main(int argc, char *argv[])
 {
-	LogError("Test string.");
+    initial_telemetry();
+    if (argc < 5)
+    {
+        LogError("Usage: %s <IoT hub device connection string> <can_if> <can_id> <node_ids>", argv[0]);
+        send_telemetry_data(NULL, EVENT_FAILED, "Device connection string is not provided");
+        return 1;
+    }
+
+	signal(SIGINT, close_thread);
+
+	uint8_t can_table[] = {0x00, 0x01};
+
+	int index = if_nametoindex(argv[2]);
+	uint8_t can_id = atoi(argv[3]);
+	sscanf(argv[4], "%d %d", &can_table[0], &can_table[1]);
+
+	LogInfo("%s index %d, Node ID %d, Nodes %d %d.", argv[2], index, can_id, can_table[0], can_table[1]);
 	/* Setup CAN. */
-	if (!can_setup(0, 0, 125))
+	if (!can_setup(index, can_id, 125, can_table, sizeof(can_table)))
 	{
 		LogError("Could not setup CAN.");
 		return 1;
 	}
 
-    initial_telemetry();
-    if (argc < 2)
-    {
-        LogError("Usage: %s <IoT hub device connection string> <can_if>", argv[0]);
-        send_telemetry_data(NULL, EVENT_FAILED, "Device connection string is not provided");
-        return 1;
-    }
+	if (0 != pthread_create(&can_send_thread, NULL, can_thread, NULL))
+	{
+		LogError("CAN send thread could not be created.");
+		return 1;
+	}
 
     setupWiring();
 
@@ -387,11 +430,10 @@ int main(int argc, char *argv[])
             char *iotHubName = parse_iothub_name(argv[1]);
             send_telemetry_data_multi_thread(iotHubName, EVENT_SUCCESS, "IoT hub connection is established");
             int count = 0;
-            while (true)
+            while (run_thread)
             {
                 if (sendingMessage && !messagePending)
                 {
-                	printf("Sending message.\n");
                     ++count;
                     char buffer[BUFFER_SIZE];
                     if (buffer != NULL)
@@ -411,6 +453,7 @@ int main(int argc, char *argv[])
                 IoTHubClient_LL_DoWork(iotHubClientHandle);
             }
 
+        	can_shutdown();
             IoTHubClient_LL_Destroy(iotHubClientHandle);
         }
         platform_deinit();
