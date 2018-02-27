@@ -2,6 +2,7 @@
 * IoT Hub Raspberry Pi C - Microsoft Sample Code - Copyright (c) 2017 - Licensed MIT
 */
 #include "./wiring.h"
+#include <stdint.h>
 
 static unsigned int BMEInitMark = 0;
 
@@ -14,13 +15,24 @@ float random(int min, int max)
 
 int readMessage(int messageId, char *payload)
 {
-    float temperature = random(20, 30);
+	uint16_t temperature;
+	uint16_t humidity;
+
+	uint8_t buffer[8];
+
+	int bytes = can_read_blocking(buffer, sizeof(buffer));
+
+	if (bytes >= 4)
+	{
+		temperature = buffer[0] << 8 | buffer[1];
+		humidity = buffer[2] << 8 | buffer[3];
+	}
     snprintf(payload,
              BUFFER_SIZE,
-             "{ \"deviceId\": \"Raspberry Pi - C\", \"messageId\": %d, \"temperature\": %f, \"humidity\": %f }",
+             "{ \"deviceId\": \"Raspberry Pi - C\", \"messageId\": %d, \"temperature\": %d, \"humidity\": %d }",
              messageId,
              temperature,
-             random(60, 80));
+             humidity);
     return (temperature > TEMPERATURE_ALERT) ? 1 : 0;
 }
 

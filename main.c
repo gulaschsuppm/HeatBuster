@@ -19,6 +19,7 @@
 #include "./config.h"
 #include "./wiring.h"
 #include "./telemetry.h"
+#include "can_sock.h"
 
 const char *onSuccess = "\"Successfully invoke device method\"";
 const char *notFound = "\"No method found\"";
@@ -318,10 +319,18 @@ void *send_telemetry_data_multi_thread(char *iotHubName, const char *eventName, 
 
 int main(int argc, char *argv[])
 {
+	LogError("Test string.");
+	/* Setup CAN. */
+	if (!can_setup(0, 0, 125))
+	{
+		LogError("Could not setup CAN.");
+		return 1;
+	}
+
     initial_telemetry();
     if (argc < 2)
     {
-        LogError("Usage: %s <IoT hub device connection string>", argv[0]);
+        LogError("Usage: %s <IoT hub device connection string> <can_if>", argv[0]);
         send_telemetry_data(NULL, EVENT_FAILED, "Device connection string is not provided");
         return 1;
     }
@@ -382,6 +391,7 @@ int main(int argc, char *argv[])
             {
                 if (sendingMessage && !messagePending)
                 {
+                	printf("Sending message.\n");
                     ++count;
                     char buffer[BUFFER_SIZE];
                     if (buffer != NULL)
