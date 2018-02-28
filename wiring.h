@@ -28,7 +28,7 @@
 
 float random(int min, int max);
 int readMessage(int messageId, char *payload);
-void blinkLED();
+void setLED(int state);
 void setupWiring();
 
 #endif  // WIRING_H_

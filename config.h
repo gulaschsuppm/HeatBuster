@@ -9,7 +9,7 @@
 #define SIMULATED_DATA 1
 #define BUFFER_SIZE 256
 
-#define LED_PIN 7
+#define LED_PIN 29
 
 #define CREDENTIAL_PATH "~/.iot-hub"
 

@@ -27,7 +27,6 @@ const char *onSuccess = "\"Successfully invoke device method\"";
 const char *notFound = "\"No method found\"";
 
 static bool messagePending = false;
-static bool sendingMessage = true;
 
 static int interval = INTERVAL;
 
@@ -39,11 +38,7 @@ pthread_t can_send_thread;
 
 static void sendCallback(IOTHUB_CLIENT_CONFIRMATION_RESULT result, void *userContextCallback)
 {
-    if (IOTHUB_CLIENT_CONFIRMATION_OK == result)
-    {
-        blinkLED();
-    }
-    else
+    if (IOTHUB_CLIENT_CONFIRMATION_OK != result)
     {
         LogError("Failed to send message to Azure IoT Hub");
     }
@@ -96,14 +91,11 @@ static char *get_device_id(char *str)
     return device_id;
 }
 
-static void start()
+void toggleLED(void)
 {
-    sendingMessage = true;
-}
+	static uint8_t count = 0;
 
-static void stop()
-{
-    sendingMessage = false;
+	setLED(count++ % 2);
 }
 
 int deviceMethodCallback(
@@ -118,13 +110,9 @@ int deviceMethodCallback(
     const char *responseMessage = onSuccess;
     int result = 200;
 
-    if (strcmp(methodName, "start") == 0)
+    if (strcmp(methodName, "toggleLED") == 0)
     {
-        start();
-    }
-    else if (strcmp(methodName, "stop") == 0)
-    {
-        stop();
+    	toggleLED();
     }
     else
     {
@@ -432,7 +420,7 @@ int main(int argc, char *argv[])
             int count = 0;
             while (run_thread)
             {
-                if (sendingMessage && !messagePending)
+                if (!messagePending)
                 {
                     ++count;
                     char buffer[BUFFER_SIZE];

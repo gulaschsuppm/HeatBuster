@@ -106,11 +106,16 @@ int readMessage(int messageId, char *payload)
 }
 #endif
 
-void blinkLED()
+void setLED(int state)
 {
-    digitalWrite(LED_PIN, HIGH);
-    delay(100);
-    digitalWrite(LED_PIN, LOW);
+	if (state == 0)
+	{
+		digitalWrite(LED_PIN, LOW);
+	}
+	else
+	{
+		digitalWrite(LED_PIN, HIGH);
+	}
 }
 
 void setupWiring()
