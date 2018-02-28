@@ -485,8 +485,9 @@ int main(int argc, char *argv[])
 		can_table[i] = atoi(token);
 		LogInfo("Send to node %d.", can_table[i]);
 		token = strtok(NULL, " ");
-		num_of_nodes = i;
+		num_of_nodes++;
 	}
+	LogInfo("%d nodes.", num_of_nodes);
 
 	/* Setup CAN. */
 	if (!can_setup(index, can_id, 125, can_table, num_of_nodes))
