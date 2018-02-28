@@ -11,6 +11,8 @@
 #include <azure_c_shared_utility/threadapi.h>
 #include <azure_c_shared_utility/crt_abstractions.h>
 #include <iothub_client.h>
+#include <iothub_service_client_auth.h>
+#include <iothub_registrymanager.h>
 #include <iothub_client_options.h>
 #include <iothub_message.h>
 #include <iothubtransportmqtt.h>
@@ -334,12 +336,136 @@ void close_thread(int sig)
 	pthread_join(can_send_thread, NULL);
 }
 
+void printDeviceInfo(IOTHUB_DEVICE* device, int orderNum)
+{
+    if ((device != NULL) && (device->deviceId != NULL))
+    {
+        if (orderNum >= 0)
+        {
+            (void)printf("Device(%d)\r\n", orderNum);
+        }
+        else
+        {
+            (void)printf("Device\r\n");
+        }
+        (void)printf("    deviceId                    : %s\r\n", device->deviceId);
+        (void)printf("    primaryKey                  : %s\r\n", device->primaryKey);
+        (void)printf("    secondaryKey                : %s\r\n", device->secondaryKey);
+        (void)printf("    generationId                : %s\r\n", device->generationId);
+        (void)printf("    eTag                        : %s\r\n", device->eTag);
+        (void)printf("    authMethod                  : %d\r\n", device->authMethod);
+        if (device->connectionState == IOTHUB_DEVICE_CONNECTION_STATE_CONNECTED)
+        {
+            (void)printf("    connectionState             : Connected\r\n");
+        }
+        else
+        {
+            (void)printf("    connectionState             : Disconnected\r\n");
+        }
+        (void)printf("    connectionStateUpdatedTime  : %s\r\n", device->eTag);
+        if (device->status == IOTHUB_DEVICE_STATUS_ENABLED)
+        {
+            (void)printf("    status                      : Enabled\r\n");
+        }
+        else
+        {
+            (void)printf("    status                      : Disabled\r\n");
+        }
+        (void)printf("    statusReason                : %s\r\n", device->statusReason);
+        (void)printf("    statusUpdatedTime           : %s\r\n", device->statusUpdatedTime);
+        (void)printf("    lastActivityTime            : %s\r\n", device->lastActivityTime);
+        (void)printf("    cloudToDeviceMessageCount   : %zu\r\n", device->cloudToDeviceMessageCount);
+    }
+}
+
+int register_device(char* iot_hub_connection_string, char* deviceId, char* connection_string, size_t connection_string_len)
+{
+	int ret = 0;
+
+    IOTHUB_REGISTRYMANAGER_RESULT result;
+
+    IOTHUB_REGISTRY_DEVICE_CREATE deviceCreateInfo;
+    IOTHUB_REGISTRY_DEVICE_UPDATE deviceUpdateInfo;
+
+    IOTHUB_SERVICE_CLIENT_AUTH_HANDLE iotHubServiceClientHandle = IoTHubServiceClientAuth_CreateFromConnectionString(iot_hub_connection_string);
+    if (iotHubServiceClientHandle == NULL)
+    {
+        (void)printf("IoTHubServiceClientAuth_CreateFromConnectionString failed\r\n");
+        ret = 1;
+    }
+    else
+    {
+		IOTHUB_REGISTRYMANAGER_HANDLE iotHubRegistryManagerHandle = NULL;
+		IOTHUB_DEVICE deviceInfo;
+		IOTHUB_REGISTRY_STATISTICS registryStatistics;
+
+		(void)printf("iotHubServiceClientHandle has been created successfully\r\n");
+		(void)printf("Creating RegistryManager...\r\n");
+
+		iotHubRegistryManagerHandle = IoTHubRegistryManager_Create(iotHubServiceClientHandle);
+
+		(void)printf("RegistryManager has been created successfully\r\n");
+
+		deviceCreateInfo.deviceId = deviceId;
+		deviceCreateInfo.primaryKey = "";
+		deviceCreateInfo.secondaryKey = "";
+		deviceCreateInfo.authMethod = IOTHUB_REGISTRYMANAGER_AUTH_SPK;
+
+		// Create device
+		result = IoTHubRegistryManager_CreateDevice(iotHubRegistryManagerHandle, &deviceCreateInfo, &deviceInfo);
+		switch (result)
+		{
+		case IOTHUB_REGISTRYMANAGER_OK:
+			(void)printf("IoTHubRegistryManager_CreateDevice: Device has been created successfully: deviceId=%s\r\n", deviceInfo.deviceId);
+			break;
+		case IOTHUB_REGISTRYMANAGER_DEVICE_EXIST:
+			(void)printf("IoTHubRegistryManager_CreateDevice: Device already exists\r\n");
+			break;
+		case IOTHUB_REGISTRYMANAGER_ERROR:
+			(void)printf("IoTHubRegistryManager_CreateDevice failed\r\n");
+			ret = 1;
+			break;
+		default:
+			(void)printf("IoTHubRegistryManager_CreateDevice failed with unknown error\r\n");
+			ret = 1;
+			break;
+		}
+
+		if (ret == 0)
+		{
+			result = IoTHubRegistryManager_GetDevice(iotHubRegistryManagerHandle, deviceCreateInfo.deviceId, &deviceInfo);
+			switch (result)
+			{
+			case IOTHUB_REGISTRYMANAGER_OK:
+				(void)printf("IoTHubRegistryManager_GetDevice: Successfully got device info: deviceId=%s\r\n", deviceInfo.deviceId);
+				printDeviceInfo(&deviceInfo, -1);
+				break;
+			case IOTHUB_REGISTRYMANAGER_ERROR:
+				(void)printf("IoTHubRegistryManager_GetDevice failed\r\n");
+				ret = 1;
+				break;
+			default:
+				(void)printf("IoTHubRegistryManager_GetDevice failed with unknown error\r\n");
+				ret = 1;
+				break;
+			}
+		}
+
+		if (ret == 0)
+		{
+			sprintf(connection_string, "HostName=%s;DeviceId=%s;SharedAccessKey=%s", iotHubServiceClientHandle->hostname, deviceInfo.deviceId, deviceInfo.primaryKey);
+		}
+    }
+
+    return ret;
+}
+
 int main(int argc, char *argv[])
 {
     initial_telemetry();
-    if (argc < 5)
+    if (argc < 6)
     {
-        LogError("Usage: %s <IoT hub device connection string> <can_if> <can_id> <node_ids>", argv[0]);
+        LogError("Usage: %s <IoT hub connection string> <device_id> <can_if> <can_id> <node_ids>", argv[0]);
         send_telemetry_data(NULL, EVENT_FAILED, "Device connection string is not provided");
         return 1;
     }
@@ -348,11 +474,11 @@ int main(int argc, char *argv[])
 
 	uint8_t can_table[] = {0x00, 0x01};
 
-	int index = if_nametoindex(argv[2]);
-	uint8_t can_id = atoi(argv[3]);
-	sscanf(argv[4], "%d %d", &can_table[0], &can_table[1]);
+	int index = if_nametoindex(argv[3]);
+	uint8_t can_id = atoi(argv[4]);
+	sscanf(argv[5], "%d %d", &can_table[0], &can_table[1]);
 
-	LogInfo("%s index %d, Node ID %d, Nodes %d %d.", argv[2], index, can_id, can_table[0], can_table[1]);
+	LogInfo("%s index %d, Node ID %d, Nodes %d %d.", argv[3], index, can_id, can_table[0], can_table[1]);
 	/* Setup CAN. */
 	if (!can_setup(index, can_id, 125, can_table, sizeof(can_table)))
 	{
@@ -368,22 +494,6 @@ int main(int argc, char *argv[])
 
     setupWiring();
 
-    char device_id[257];
-    char *device_id_src = get_device_id(argv[1]);
-
-    if (device_id_src == NULL)
-    {
-        LogError("Cannot parse device id from IoT device connection string");
-        send_telemetry_data(NULL, EVENT_FAILED, "Cannot parse device id from connection string");
-        pthread_join(thread, NULL);
-        return 1;
-    }
-
-    snprintf(device_id, sizeof(device_id), "%s", device_id_src);
-    free(device_id_src);
-
-    IOTHUB_CLIENT_LL_HANDLE iotHubClientHandle;
-
     if (platform_init() != 0)
     {
         LogError("Failed to initialize the platform.");
@@ -391,60 +501,75 @@ int main(int argc, char *argv[])
     }
     else
     {
-        if ((iotHubClientHandle = IoTHubClient_LL_CreateFromConnectionString(argv[1], MQTT_Protocol)) == NULL)
-        {
-            LogError("iotHubClientHandle is NULL!");
-            send_telemetry_data(NULL, EVENT_FAILED, "Cannot create iotHubClientHandle");
-        }
-        else
-        {
-            if (strstr(argv[1], "x509=true") != NULL)
-            {
-                // Use X.509 certificate authentication.
-                if (!setX509Certificate(iotHubClientHandle, device_id))
-                {
-                    send_telemetry_data(NULL, EVENT_FAILED, "Certificate is not right");
-                    return 1;
-                }
-            }
+		char connection_string[256] = {0};
+		LogInfo("Trying to register %s with connection string %s.", argv[2], argv[1]);
+		if (0 != register_device(argv[1], argv[2], connection_string, sizeof(connection_string)))
+		{
+			LogError("Cannot parse device id from IoT device connection string");
+			send_telemetry_data(NULL, EVENT_FAILED, "Cannot parse device id from connection string");
+			pthread_join(thread, NULL);
+			return 1;
+		}
+		else
+		{
+			LogInfo("Device connection string: %s.\n", connection_string);
+		    IOTHUB_CLIENT_LL_HANDLE iotHubClientHandle;
 
-            // set C2D and device method callback
-            IoTHubClient_LL_SetMessageCallback(iotHubClientHandle, receiveMessageCallback, NULL);
-            IoTHubClient_LL_SetDeviceMethodCallback(iotHubClientHandle, deviceMethodCallback, NULL);
-            IoTHubClient_LL_SetDeviceTwinCallback(iotHubClientHandle, twinCallback, NULL);
+		    if ((iotHubClientHandle = IoTHubClient_LL_CreateFromConnectionString(connection_string, MQTT_Protocol)) == NULL)
+			{
+				LogError("iotHubClientHandle is NULL!");
+				send_telemetry_data(NULL, EVENT_FAILED, "Cannot create iotHubClientHandle");
+			}
+			else
+			{
+				if (strstr(argv[1], "x509=true") != NULL)
+				{
+					// Use X.509 certificate authentication.
+					if (!setX509Certificate(iotHubClientHandle, argv[2]))
+					{
+						send_telemetry_data(NULL, EVENT_FAILED, "Certificate is not right");
+						return 1;
+					}
+				}
 
-            IoTHubClient_LL_SetOption(iotHubClientHandle, "product_info", "HappyPath_RaspberryPi-C");
+				// set C2D and device method callback
+				IoTHubClient_LL_SetMessageCallback(iotHubClientHandle, receiveMessageCallback, NULL);
+				IoTHubClient_LL_SetDeviceMethodCallback(iotHubClientHandle, deviceMethodCallback, NULL);
+				IoTHubClient_LL_SetDeviceTwinCallback(iotHubClientHandle, twinCallback, NULL);
 
-            char *iotHubName = parse_iothub_name(argv[1]);
-            send_telemetry_data_multi_thread(iotHubName, EVENT_SUCCESS, "IoT hub connection is established");
-            int count = 0;
-            while (run_thread)
-            {
-                if (!messagePending)
-                {
-                    ++count;
-                    char buffer[BUFFER_SIZE];
-                    if (buffer != NULL)
-                    {
-                        int result = readMessage(count, buffer);
-                        if (result != -1)
-                        {
-                            sendMessages(iotHubClientHandle, buffer, result);
-                        }
-                        else
-                        {
-                            LogError("Failed to read message");
-                        }
-                    }
-                    delay(interval);
-                }
-                IoTHubClient_LL_DoWork(iotHubClientHandle);
-            }
+				IoTHubClient_LL_SetOption(iotHubClientHandle, "product_info", "HappyPath_RaspberryPi-C");
 
-        	can_shutdown();
-            IoTHubClient_LL_Destroy(iotHubClientHandle);
-        }
-        platform_deinit();
+				char *iotHubName = parse_iothub_name(argv[1]);
+				send_telemetry_data_multi_thread(iotHubName, EVENT_SUCCESS, "IoT hub connection is established");
+				int count = 0;
+				while (run_thread)
+				{
+					if (!messagePending)
+					{
+						++count;
+						char buffer[BUFFER_SIZE];
+						if (buffer != NULL)
+						{
+							int result = readMessage(count, buffer);
+							if (result != -1)
+							{
+								sendMessages(iotHubClientHandle, buffer, result);
+							}
+							else
+							{
+								LogError("Failed to read message");
+							}
+						}
+						delay(interval);
+					}
+					IoTHubClient_LL_DoWork(iotHubClientHandle);
+				}
+
+				can_shutdown();
+				IoTHubClient_LL_Destroy(iotHubClientHandle);
+			}
+			platform_deinit();
+		}
     }
 
     return 0;

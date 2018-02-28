@@ -2,6 +2,7 @@
 * IoT Hub Raspberry Pi C - Microsoft Sample Code - Copyright (c) 2017 - Licensed MIT
 */
 #include "./telemetry.h"
+#include <stdio.h>
 
 static struct utsname platform;
 static const char *PATH = "https://dc.services.visualstudio.com/v2/track";
