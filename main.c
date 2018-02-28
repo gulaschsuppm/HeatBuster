@@ -472,15 +472,24 @@ int main(int argc, char *argv[])
 
 	signal(SIGINT, close_thread);
 
-	uint8_t can_table[] = {0x00, 0x01};
+	uint8_t can_table[MAX_CAN_NODES] = {0};
 
 	int index = if_nametoindex(argv[3]);
 	uint8_t can_id = atoi(argv[4]);
-	sscanf(argv[5], "%d %d", &can_table[0], &can_table[1]);
 
-	LogInfo("%s index %d, Node ID %d, Nodes %d %d.", argv[3], index, can_id, can_table[0], can_table[1]);
+	LogInfo("%s index %d, Node ID %d", argv[3], index, can_id);
+	int num_of_nodes = 0;
+	char* token = strtok(argv[5], " ");
+	for (size_t i = 0; i < MAX_CAN_NODES && token != NULL; i++)
+	{
+		can_table[i] = atoi(token);
+		LogInfo("Send to node %d.", can_table[i]);
+		token = strtok(NULL, " ");
+		num_of_nodes = i;
+	}
+
 	/* Setup CAN. */
-	if (!can_setup(index, can_id, 125, can_table, sizeof(can_table)))
+	if (!can_setup(index, can_id, 125, can_table, num_of_nodes))
 	{
 		LogError("Could not setup CAN.");
 		return 1;

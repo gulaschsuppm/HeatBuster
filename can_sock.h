@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#define MAX_CAN_NODES	6
+
 bool can_setup (int32_t CANbaseAddress, uint8_t nodeId, uint16_t bitRate, uint8_t* node_table, size_t node_table_length);
 void can_shutdown(void);
 

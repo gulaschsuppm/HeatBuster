@@ -14,8 +14,6 @@
 
 #include <azure_c_shared_utility/xlogging.h>
 
-#define MAX_CAN_NODES	6
-
 static int fd;
 
 static uint8_t can_id_table[MAX_CAN_NODES];
