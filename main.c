@@ -325,7 +325,6 @@ void *can_thread(void *argv)
 		snprintf(data, sizeof(data), "%2.4f", temp);
 		temp = random(0, 99);
 		snprintf(data + 4, sizeof(data) - 4, "%2.4f", temp);
-		LogInfo("Trying to write CAN %s.", data);
 		int count = can_write(data, 8);
 	}
 }

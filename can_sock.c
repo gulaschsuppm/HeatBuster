@@ -14,11 +14,12 @@
 
 #include <azure_c_shared_utility/xlogging.h>
 
-#define MAX_CAN_NODES	2
+#define MAX_CAN_NODES	6
 
 static int fd;
 
 static uint8_t can_id_table[MAX_CAN_NODES];
+static uint8_t num_of_nodes = 0;
 static uint8_t node_id;
 struct can_filter* filter;
 
@@ -28,10 +29,11 @@ bool can_setup (int32_t CANbaseAddress, uint8_t nodeId, uint16_t bitRate, uint8_
 
 	struct sockaddr_can sockAddr;
 
-	if (node_table_length == MAX_CAN_NODES)
+	if (node_table_length <= MAX_CAN_NODES)
 	{
 		memcpy(can_id_table, node_table, node_table_length);
 		node_id = nodeId;
+		num_of_nodes = node_table_length;
 	}
 	else
 	{
@@ -144,6 +146,10 @@ int can_write(uint8_t* buffer, size_t buffer_len)
 	memcpy(msg.data, buffer, buffer_len);
 
     size_t count = sizeof(msg);
+
+    char print_temp[9] = {0};
+    memcpy(print_temp, msg.data, buffer_len);
+	LogInfo("Trying to write CAN data %s to node %d.", print_temp, msg.can_id);
 
     int n = write(fd, &msg, count);
 
