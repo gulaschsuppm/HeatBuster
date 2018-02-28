@@ -157,6 +157,7 @@ void twinCallback(
         if (MULTITREE_OK == MultiTree_GetLeafValue(child, "interval", &value))
         {
             interval = atoi((const char *)value);
+            LogInfo("Changing interval to %d.", interval);
         }
     }
     MultiTree_Destroy(tree);
