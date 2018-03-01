@@ -1,6 +1,7 @@
 #include "can_sock.h"
 #include <stdbool.h>
 #include <sys/socket.h>
+#include <fcntl.h>
 
 #include <linux/can.h>
 #include <linux/can/raw.h>
@@ -24,7 +25,7 @@ struct can_filter* filter;
 bool can_setup (int32_t CANbaseAddress, uint8_t nodeId, uint16_t bitRate, uint8_t* node_table, size_t node_table_length)
 {
 	bool ret = true;
-
+    int flags;
 	struct sockaddr_can sockAddr;
 
 	if (node_table_length <= MAX_CAN_NODES)
@@ -43,6 +44,9 @@ bool can_setup (int32_t CANbaseAddress, uint8_t nodeId, uint16_t bitRate, uint8_
 	{
 		/* Create and bind socket */
 		fd = socket(AF_CAN, SOCK_RAW, CAN_RAW);
+        /* Configure to non blocking */
+        flags = fcntl(fd, F_GETFL, 0);
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 	}
 
     if(ret == false || fd < 0)
@@ -102,7 +106,7 @@ void can_shutdown(void)
     free(filter);
     filter = NULL;
 }
-
+/* TODO remove if no longer needed */
 int can_read_blocking(uint8_t* buffer, size_t buffer_len)
 {
 	struct can_frame msg;
@@ -119,6 +123,40 @@ int can_read_blocking(uint8_t* buffer, size_t buffer_len)
     else
     {
     	LogError("Buffer too small for msg length %d.", msg.can_dlc);
+    }
+
+    return msg.can_dlc;
+}
+
+int can_read(uint8_t* buffer, size_t buffer_len)
+{
+	struct can_frame msg;
+	int n, size;
+
+    /* Read socket and pre-process message */
+    size = sizeof(struct can_frame);
+    n = read(fd, &msg, size);
+
+	if(n != -1)
+    {
+        if (msg.can_dlc <= buffer_len)
+        {
+            memcpy(buffer, msg.data, msg.can_dlc);
+        }
+        else
+        {
+            LogError("Buffer too small for msg length %d.", msg.can_dlc);
+        }
+
+        if(msg.can_dlc == -1)
+        {
+			LogError("Failed to read message");
+        }
+        
+    }
+    else
+    {
+        msg.can_dlc = (uint8_t) NULL;
     }
 
     return msg.can_dlc;
