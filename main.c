@@ -550,14 +550,10 @@ int main(int argc, char *argv[])
 						char buffer[BUFFER_SIZE];
 						if (buffer != NULL)
 						{
-							int result = readMessage(count, buffer);
+							int result = readMessage(count, buffer);                         
 							if (result != -1)
 							{
 								sendMessages(iotHubClientHandle, buffer, result);
-							}
-							else
-							{
-								LogError("Failed to read message");
 							}
 						}
 						delay(interval);
